@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "565444919181",
+    "project_id": "dungeon-21925",
+    "storage_bucket": "dungeon-21925.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:565444919181:android:bfc39882b87c80fa2487c4",
+        "android_client_info": {
+          "package_name": "com.example.dungeon2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBoXFXRFBjMzIJXh0ZiZeAdi4KrU8rLQ8w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
