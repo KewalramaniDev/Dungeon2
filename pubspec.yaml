@@ -35,7 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   flame: ^1.28.1
+  google_fonts: ^6.2.1
   flame_tiled: ^3.0.2
+  # Ensure proper web support
+  web_browser_detect: ^2.0.3
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +67,7 @@ flutter:
      - assets/images/
      - assets/tiles/Map/
      - assets/tiles/
+     - assets/images/Warrior/
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
