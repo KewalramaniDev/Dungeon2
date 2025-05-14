@@ -1,0 +1,2 @@
+D:/Dungeon2/android/app/.cxx/Debug/u5p5c3h5/arm64-v8a/CMakeFiles/edit_cache.dir
+D:/Dungeon2/android/app/.cxx/Debug/u5p5c3h5/arm64-v8a/CMakeFiles/rebuild_cache.dir
