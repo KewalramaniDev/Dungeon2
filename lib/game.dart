@@ -35,9 +35,11 @@ class GamePage extends StatelessWidget {
 class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDetection {
   JoystickComponent? joystick;
   TiledComponent? mapComponent;
+  TileLayer? baseLayer; // Store Base layer
+  TileLayer? wallLayer; // Store Wall layer
   Warrior? player;
   bool isRunButtonPressed = false;
-  final double desiredZoom = 3.0; // Increased for better player focus
+  final double desiredZoom = 4.0; // Increased for better player focus
   RunButtonComponent? runBtn;
   HudButtonComponent? jumpBtn;
   HudButtonComponent? attackBtn;
@@ -50,6 +52,22 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     try {
       mapComponent = await TiledComponent.load('Map/1st base.tmx', Vector2.all(32));
       add(mapComponent!);
+      // Store Base and Wall layers
+      baseLayer = mapComponent!.tileMap.getLayer<TileLayer>('Base');
+      wallLayer = mapComponent!.tileMap.getLayer<TileLayer>('Wall');
+      if (baseLayer == null || wallLayer == null) {
+        print('Warning: Base or Wall layer not found');
+        camera.viewport.add(
+          TextComponent(
+            text: 'Base or Wall layer missing. Using fallback movement.',
+            position: size / 2 + Vector2(0, 30),
+            anchor: Anchor.center,
+            textRenderer: TextPaint(
+              style: const TextStyle(color: Colors.yellow, fontSize: 20),
+            ),
+          ),
+        );
+      }
     } catch (e) {
       print('Error loading map from assets: $e');
       mapComponent = null;
@@ -68,37 +86,24 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     // Find spawn point
     Vector2 spawn = Vector2.zero();
     try {
-      if (mapComponent != null) {
-        final baseLayer = mapComponent!.tileMap.getLayer<TileLayer>('Base');
-        if (baseLayer != null && baseLayer.tileData != null) {
-          for (var y = 0; y < baseLayer.height; y++) {
-            if (y < baseLayer.tileData!.length) {
-              for (var x = 0; x < baseLayer.width; x++) {
-                if (x < baseLayer.tileData![y].length) {
-                  final tile = baseLayer.tileData![y][x];
-                  if (tile.tile != 0) {
-                    spawn = Vector2(x.toDouble(), y.toDouble());
-                    print('Spawn found at tile: ($x, $y)');
-                    break;
-                  }
+      if (baseLayer != null && baseLayer!.tileData != null) {
+        for (var y = 0; y < baseLayer!.height; y++) {
+          if (y < baseLayer!.tileData!.length) {
+            for (var x = 0; x < baseLayer!.width; x++) {
+              if (x < baseLayer!.tileData![y].length) {
+                final tile = baseLayer!.tileData![y][x];
+                if (tile.tile != 0) {
+                  spawn = Vector2(x.toDouble(), y.toDouble());
+                  print('Spawn found at tile: ($x, $y)');
+                  break;
                 }
               }
-              if (spawn != Vector2.zero()) break;
             }
+            if (spawn != Vector2.zero()) break;
           }
-        } else {
-          print('Warning: Base layer not found or has no tile data, using default spawn');
-          camera.viewport.add(
-            TextComponent(
-              text: 'Base layer missing. Using fallback movement.',
-              position: size / 2 + Vector2(0, 30),
-              anchor: Anchor.center,
-              textRenderer: TextPaint(
-                style: const TextStyle(color: Colors.yellow, fontSize: 20),
-              ),
-            ),
-          );
         }
+      } else {
+        print('Warning: Base layer has no tile data, using default spawn');
       }
     } catch (e) {
       print('Error finding spawn point: $e');
@@ -130,7 +135,6 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         knob: CircleComponent(radius: 20, paint: Paint()..color = Colors.white),
         background: CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
         anchor: Anchor.bottomLeft,
-        // deadZone: 0.05, // Uncomment if using Flame >= 1.10.0
       );
       runBtn = RunButtonComponent(
         onPressed: (pressed) => isRunButtonPressed = pressed,
@@ -255,8 +259,8 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   Warrior({Vector2? position})
       : super(
     position: position ?? Vector2.zero(),
-    size: Vector2.all(128), // Increased for better visibility
-    anchor: Anchor.bottomCenter,
+    size: Vector2.all(192), // Increased for better visibility
+    anchor: Anchor.center,
   );
 
   @override
@@ -338,7 +342,10 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
 
     final speed = gameRef.isRunButtonPressed ? runSpeed : walkSpeed;
 
-    if (_moveTarget == null && current != WarriorState.attack1 && current != WarriorState.attack2 && current != WarriorState.jump) {
+    if (_moveTarget == null &&
+        current != WarriorState.attack1 &&
+        current != WarriorState.attack2 &&
+        current != WarriorState.jump) {
       final delta = gameRef.joystick?.relativeDelta ?? Vector2.zero();
       if (delta != Vector2.zero()) {
         Vector2 dir = delta.normalized();
@@ -352,29 +359,32 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
         );
         final nextTile = currentTile + Vector2(dir.x, dir.y);
 
-        bool isWalkable = true;
-        if (gameRef.mapComponent != null) {
-          final base = gameRef.mapComponent!.tileMap.getLayer<TileLayer>('Base');
-          if (base != null &&
-              nextTile.x >= 0 &&
-              nextTile.x < base.width &&
-              nextTile.y >= 0 &&
-              nextTile.y < base.height &&
-              base.tileData != null) {
-            final tileData = base.tileData!;
-            final nextY = nextTile.y.toInt();
-            final nextX = nextTile.x.toInt();
-            if (nextY < tileData.length && nextX < tileData[nextY].length) {
-              final tile = tileData[nextY][nextX];
-              isWalkable = tile.tile != 0;
-              print('Tile ($nextX, $nextY) isWalkable: $isWalkable');
-            } else {
-              isWalkable = false;
-              print('Tile ($nextX, $nextY) out of bounds');
-            }
+        bool isWalkable = false;
+        if (gameRef.baseLayer != null && gameRef.wallLayer != null) {
+          final baseTileData = gameRef.baseLayer!.tileData;
+          final wallTileData = gameRef.wallLayer!.tileData;
+          final nextY = nextTile.y.toInt();
+          final nextX = nextTile.x.toInt();
+          if (nextY >= 0 &&
+              nextY < gameRef.baseLayer!.height &&
+              nextX >= 0 &&
+              nextX < gameRef.baseLayer!.width &&
+              baseTileData != null &&
+              wallTileData != null &&
+              nextY < baseTileData.length &&
+              nextX < baseTileData[nextY].length &&
+              nextY < wallTileData.length &&
+              nextX < wallTileData[nextY].length) {
+            final baseTile = baseTileData[nextY][nextX];
+            final wallTile = wallTileData[nextY][nextX];
+            isWalkable = (baseTile.tile != 0) && (wallTile.tile == 0);
+            print('Tile ($nextX, $nextY) isWalkable: $isWalkable, Base gid: ${baseTile.tile}, Wall gid: ${wallTile.tile}');
           } else {
-            print('Base layer not available, using fallback movement');
+            print('Tile ($nextX, $nextY) out of bounds');
           }
+        } else {
+          print('Base or Wall layer not available, using fallback movement');
+          isWalkable = true; // Fallback: allow movement if layers are missing
         }
 
         if (isWalkable) {
