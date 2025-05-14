@@ -40,6 +40,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   Warrior? player;
   bool isRunButtonPressed = false;
   final double desiredZoom = 4.0; // Increased for better player focus
+  final double tileSize = 32; // Tile size for grid calculations
   RunButtonComponent? runBtn;
   HudButtonComponent? jumpBtn;
   HudButtonComponent? attackBtn;
@@ -111,7 +112,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
 
     // Add player
     try {
-      player = Warrior(position: (spawn + Vector2(0.5, 0.5)) * 32);
+      player = Warrior(position: (spawn + Vector2(0.5, 0.5)) * tileSize);
       add(player!);
       camera.follow(player!, maxSpeed: 200);
     } catch (e) {
@@ -198,7 +199,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     }
     final mapWidth = mapComponent!.tileMap.map.width.toDouble();
     final mapHeight = mapComponent!.tileMap.map.height.toDouble();
-    final worldSize = Vector2(mapWidth * 32, mapHeight * 32);
+    final worldSize = Vector2(mapWidth * tileSize, mapHeight * tileSize);
     final vpSize = camera.viewport.size / camera.viewfinder.zoom;
 
     final minX = vpSize.x / 2;
@@ -255,6 +256,7 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   final double runSpeed = 200;
   int _attackPhase = 0;
   final double tileSize = 32; // Tile size for grid snapping
+  Vector2? _preAttackPosition; // Store position before attack
 
   Warrior({Vector2? position})
       : super(
@@ -280,6 +282,17 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       final atk1Img = await gameRef.images.load('Warrior/Attack-1.png');
       final atk2Img = await gameRef.images.load('Warrior/Attack-2.png');
 
+      // Debug: Print image sizes to verify consistency
+      print('Idle image size: ${idleImg.width}x${idleImg.height} (12 frames, expected ~128x128 per frame)');
+      print('Run image size: ${runImg.width}x${runImg.height} (8 frames, expected ~128x128 per frame)');
+      print('Jump image size: ${jumpImg.width}x${jumpImg.height} (2 frames, expected ~128x128 per frame)');
+      print('Attack-1 image size: ${atk1Img.width}x${atk1Img.height} (7 frames, expected ~128x128 per frame)');
+      print('Attack-2 image size: ${atk2Img.width}x${atk2Img.height} (7 frames, expected ~128x128 per frame)');
+
+      // Ensure all sprite sheets have consistent frame sizes (128x128 pixels) and character alignment.
+      // Check in an image editor that the character's center or feet are at the same y-coordinate
+      // (e.g., y = 64 or y = 128) across all frames to prevent visual shifts.
+
       idleAnimation = SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
           .createAnimation(row: 0, stepTime: 0.1, to: 12);
       runAnimation = SpriteSheet.fromColumnsAndRows(image: runImg, columns: 8, rows: 1)
@@ -290,6 +303,7 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
           .createAnimation(row: 0, stepTime: 0.08, to: 7);
       attack2Animation = SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
           .createAnimation(row: 0, stepTime: 0.08, to: 7);
+
     } catch (e) {
       print('Error loading warrior assets: $e');
       return;
@@ -311,9 +325,11 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   void jump() {
     if (current != WarriorState.jump) {
       current = WarriorState.jump;
+      print('Switching to jump state at position: $position');
       Future.delayed(const Duration(milliseconds: 300), () {
         if (current == WarriorState.jump) {
           current = WarriorState.idle;
+          print('Returning to idle state from jump at position: $position');
         }
       });
     }
@@ -321,15 +337,22 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
 
   void attack() {
     if (_attackPhase == 0) {
+      _preAttackPosition = position.clone(); // Store position before attack
       _attackPhase = 1;
       current = WarriorState.attack1;
+      print('Switching to attack1 state at position: $position');
       Future.delayed(const Duration(milliseconds: 560), () {
         if (_attackPhase == 1) {
           _attackPhase = 2;
           current = WarriorState.attack2;
+          position = _preAttackPosition!; // Restore position
+          print('Switching to attack2 state at position: $position');
           Future.delayed(const Duration(milliseconds: 560), () {
             _attackPhase = 0;
             current = WarriorState.idle;
+            position = _preAttackPosition!; // Restore position
+            _preAttackPosition = null;
+            print('Returning to idle state at position: $position');
           });
         }
       });
