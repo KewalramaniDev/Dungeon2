@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'dart:ui'; // For Rect
+import 'dart:ui' as ui; // Explicitly import dart:ui with alias
 import 'package:flame/camera.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -41,9 +41,9 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   bool isRunButtonPressed = false;
   final double desiredZoom = 4.0; // Increased for better player focus
   final double tileSize = 32; // Tile size for grid calculations
-  RunButtonComponent? runBtn;
-  HudButtonComponent? jumpBtn;
-  HudButtonComponent? attackBtn;
+  RoundImageButtonComponent? runBtn;
+  RoundImageButtonComponent? jumpBtn;
+  RoundImageButtonComponent? attackBtn;
 
   @override
   Future<void> onLoad() async {
@@ -137,21 +137,33 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         background: CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
         anchor: Anchor.bottomLeft,
       );
-      runBtn = RunButtonComponent(
+
+      // Load button images
+      final runImage = await images.load('run.png');
+      final jumpImage = await images.load('jump.png');
+      final attackImage = await images.load('attack.png');
+
+      runBtn = RoundImageButtonComponent(
         onPressed: (pressed) => isRunButtonPressed = pressed,
+        isHold: true,
+        image: runImage,
         anchor: Anchor.bottomRight,
       );
-      jumpBtn = HudButtonComponent(
-        button: CircleComponent(radius: 24, paint: Paint()..color = Colors.blue),
-        buttonDown: CircleComponent(radius: 24, paint: Paint()..color = Colors.blueAccent),
+      jumpBtn = RoundImageButtonComponent(
+        onPressed: (pressed) {
+          if (!pressed) player?.jump();
+        },
+        isHold: false,
+        image: jumpImage,
         anchor: Anchor.bottomRight,
-        onPressed: () => player?.jump(),
       );
-      attackBtn = HudButtonComponent(
-        button: CircleComponent(radius: 24, paint: Paint()..color = Colors.grey),
-        buttonDown: CircleComponent(radius: 24, paint: Paint()..color = Colors.grey.shade100),
+      attackBtn = RoundImageButtonComponent(
+        onPressed: (pressed) {
+          if (!pressed) player?.attack();
+        },
+        isHold: false,
+        image: attackImage,
         anchor: Anchor.bottomRight,
-        onPressed: () => player?.attack(),
       );
 
       camera.viewport.addAll([joystick!, runBtn!, jumpBtn!, attackBtn!]);
@@ -180,15 +192,34 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     if (joystick != null) {
       joystick!.position = Vector2(40, size.y - joystick!.size.y / 2);
     }
-    if (runBtn != null) {
-      runBtn!.position = Vector2(size.x - runBtn!.size.x * 2.5, size.y - runBtn!.size.y / 2);
-    }
-    if (jumpBtn != null) {
-      jumpBtn!.position = Vector2(size.x - jumpBtn!.size.x * 1.5, size.y - jumpBtn!.size.y / 2);
-    }
+
+    // Pyramid layout for buttons
+    const double buttonRadius = 24; // Radius of round buttons
+    const double buttonDiameter = buttonRadius * 2; // 48 pixels
+    const double buttonMarginX = 12; // Increased for better edge spacing
+    const double buttonMarginY = 12;
+    const double buttonSpaceX = 12; // Space between jump and attack buttons
+    const double buttonSpaceY = 12; // Space between run and lower buttons
+
     if (attackBtn != null) {
-      attackBtn!.position = Vector2(size.x - attackBtn!.size.x / 2, size.y - attackBtn!.size.y / 2);
+      attackBtn!.position = Vector2(size.x - buttonMarginX - buttonRadius, size.y - buttonMarginY - buttonRadius);
     }
+    if (jumpBtn != null && attackBtn != null) {
+      jumpBtn!.position = Vector2(
+        attackBtn!.position.x - buttonDiameter - buttonSpaceX,
+        attackBtn!.position.y,
+      );
+    }
+    if (runBtn != null && jumpBtn != null && attackBtn != null) {
+      double centerXJump = jumpBtn!.position.x;
+      double centerXAttack = attackBtn!.position.x;
+      double averageCenterX = (centerXJump + centerXAttack) / 2;
+      runBtn!.position = Vector2(
+        averageCenterX,
+        jumpBtn!.position.y - buttonDiameter - buttonSpaceY,
+      );
+    }
+
     setCameraBounds();
   }
 
@@ -211,41 +242,50 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   }
 }
 
-class RunButtonComponent extends CircleComponent with TapCallbacks {
+class RoundImageButtonComponent extends CircleComponent with TapCallbacks {
   final void Function(bool) onPressed;
-  bool _isPressed = false;
+  final bool isHold; // True for hold actions (run), false for tap actions (jump, attack)
 
-  RunButtonComponent({
+  RoundImageButtonComponent({
     required this.onPressed,
+    required this.isHold,
+    required ui.Image image,
     required Anchor anchor,
   }) : super(
-    radius: 24,
-    paint: Paint()..color = Colors.red,
+    radius: 24, // Fixed radius for small round buttons
+    paint: Paint()..color = Colors.black54, // Black with opacity 54/255
     anchor: anchor,
-  );
+  ) {
+    // Add image as child SpriteComponent
+    final imageSprite = SpriteComponent(
+      sprite: Sprite(image),
+      size: Vector2(40, 40), // Fixed size for images to fit within circle
+      anchor: Anchor.center,
+      position: Vector2(24, 24), // Center within the 48x48 circle
+    );
+    add(imageSprite);
+  }
 
   @override
   void onTapDown(TapDownEvent event) {
     super.onTapDown(event);
-    _isPressed = true;
-    paint.color = Colors.redAccent;
-    onPressed(true);
+    if (isHold) {
+      onPressed(true);
+    }
   }
 
   @override
   void onTapUp(TapUpEvent event) {
     super.onTapUp(event);
-    _isPressed = false;
-    paint.color = Colors.red;
     onPressed(false);
   }
 
   @override
   void onTapCancel(TapCancelEvent event) {
     super.onTapCancel(event);
-    _isPressed = false;
-    paint.color = Colors.red;
-    onPressed(false);
+    if (isHold) {
+      onPressed(false);
+    }
   }
 }
 
@@ -257,6 +297,8 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   int _attackPhase = 0;
   final double tileSize = 32; // Tile size for grid snapping
   Vector2? _preAttackPosition; // Store position before attack
+  bool isFacingLeft = false; // Track facing direction
+  bool _isFlipped = false; // Track current flip state
 
   Warrior({Vector2? position})
       : super(
@@ -282,16 +324,12 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       final atk1Img = await gameRef.images.load('Warrior/Attack-1.png');
       final atk2Img = await gameRef.images.load('Warrior/Attack-2.png');
 
-      // Debug: Print image sizes to verify consistency
-      print('Idle image size: ${idleImg.width}x${idleImg.height} (12 frames, expected ~128x128 per frame)');
-      print('Run image size: ${runImg.width}x${runImg.height} (8 frames, expected ~128x128 per frame)');
-      print('Jump image size: ${jumpImg.width}x${jumpImg.height} (2 frames, expected ~128x128 per frame)');
-      print('Attack-1 image size: ${atk1Img.width}x${atk1Img.height} (7 frames, expected ~128x128 per frame)');
-      print('Attack-2 image size: ${atk2Img.width}x${atk2Img.height} (7 frames, expected ~128x128 per frame)');
-
-      // Ensure all sprite sheets have consistent frame sizes (128x128 pixels) and character alignment.
-      // Check in an image editor that the character's center or feet are at the same y-coordinate
-      // (e.g., y = 64 or y = 128) across all frames to prevent visual shifts.
+      // Debug: Print image sizes
+      print('Idle image size: ${idleImg.width}x${idleImg.height}');
+      print('Run image size: ${runImg.width}x${runImg.height}');
+      print('Jump image size: ${jumpImg.width}x${jumpImg.height}');
+      print('Attack-1 image size: ${atk1Img.width}x${atk1Img.height}');
+      print('Attack-2 image size: ${atk2Img.width}x${atk2Img.height}');
 
       idleAnimation = SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
           .createAnimation(row: 0, stepTime: 0.1, to: 12);
@@ -303,7 +341,6 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
           .createAnimation(row: 0, stepTime: 0.08, to: 7);
       attack2Animation = SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
           .createAnimation(row: 0, stepTime: 0.08, to: 7);
-
     } catch (e) {
       print('Error loading warrior assets: $e');
       return;
@@ -376,6 +413,13 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
         if (dir.x.abs() > dir.y.abs()) dir = Vector2(dir.x.sign, 0);
         else dir = Vector2(0, dir.y.sign);
 
+        // Update facing direction
+        if (dir.x == -1) {
+          isFacingLeft = true;
+        } else if (dir.x == 1) {
+          isFacingLeft = false;
+        }
+
         final currentTile = Vector2(
           (position.x / tileSize).floor().toDouble(),
           (position.y / tileSize).floor().toDouble(),
@@ -435,5 +479,18 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
         current = WarriorState.idle;
       }
     }
+
+    // Apply horizontal flip based on facing direction
+    if (isFacingLeft && !_isFlipped) {
+      flipHorizontally();
+      _isFlipped = true;
+    } else if (!isFacingLeft && _isFlipped) {
+      flipHorizontally();
+      _isFlipped = false;
+    }
   }
+}
+
+void main() {
+  runApp(const GamePage());
 }
