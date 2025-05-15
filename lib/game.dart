@@ -44,6 +44,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   RoundImageButtonComponent? runBtn;
   RoundImageButtonComponent? jumpBtn;
   RoundImageButtonComponent? attackBtn;
+  int spawnTileX = 3; // Manual spawn point X-coordinate
+  int spawnTileY = 6; // Manual spawn point Y-coordinate
 
   @override
   Future<void> onLoad() async {
@@ -84,35 +86,10 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
       );
     }
 
-    // Find spawn point
-    Vector2 spawn = Vector2.zero();
+    // Set spawn point manually
     try {
-      if (baseLayer != null && baseLayer!.tileData != null) {
-        for (var y = 0; y < baseLayer!.height; y++) {
-          if (y < baseLayer!.tileData!.length) {
-            for (var x = 0; x < baseLayer!.width; x++) {
-              if (x < baseLayer!.tileData![y].length) {
-                final tile = baseLayer!.tileData![y][x];
-                if (tile.tile != 0) {
-                  spawn = Vector2(x.toDouble(), y.toDouble());
-                  print('Spawn found at tile: ($x, $y)');
-                  break;
-                }
-              }
-            }
-            if (spawn != Vector2.zero()) break;
-          }
-        }
-      } else {
-        print('Warning: Base layer has no tile data, using default spawn');
-      }
-    } catch (e) {
-      print('Error finding spawn point: $e');
-    }
-
-    // Add player
-    try {
-      player = Warrior(position: (spawn + Vector2(0.5, 0.5)) * tileSize);
+      Vector2 spawnPosition = Vector2(spawnTileX.toDouble() + 0.5, spawnTileY.toDouble() + 0.5) * tileSize;
+      player = Warrior(position: spawnPosition);
       add(player!);
       camera.follow(player!, maxSpeed: 200);
     } catch (e) {
@@ -299,12 +276,17 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   Vector2? _preAttackPosition; // Store position before attack
   bool isFacingLeft = false; // Track facing direction
   bool _isFlipped = false; // Track current flip state
+  bool isJumping = false; // Jump state
+  double? originalY; // Original Y position before jump
+  double jumpProgress = 0; // Progress through jump duration
+  double jumpTotalTime = 0.6; // Total jump duration in seconds
+  double jumpHeight = 50; // Jump height in pixels
 
   Warrior({Vector2? position})
       : super(
     position: position ?? Vector2.zero(),
-    size: Vector2.all(192), // Increased for better visibility
-    anchor: Anchor.center,
+    size: Vector2.all(90), // Increased for better visibility
+    anchor: Anchor.bottomCenter,
   );
 
   @override
@@ -360,15 +342,11 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   }
 
   void jump() {
-    if (current != WarriorState.jump) {
+    if (!isJumping) {
+      isJumping = true;
+      originalY = position.y;
+      jumpProgress = 0;
       current = WarriorState.jump;
-      print('Switching to jump state at position: $position');
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (current == WarriorState.jump) {
-          current = WarriorState.idle;
-          print('Returning to idle state from jump at position: $position');
-        }
-      });
     }
   }
 
@@ -400,12 +378,27 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   void update(double dt) {
     super.update(dt);
 
+    // Handle jump effect
+    if (isJumping && originalY != null) {
+      jumpProgress += dt;
+      if (jumpProgress < jumpTotalTime) {
+        double u = pi * jumpProgress / jumpTotalTime;
+        double fraction = sin(u);
+        position.y = originalY! - jumpHeight * (fraction * fraction); // Parabolic trajectory
+      } else {
+        position.y = originalY!; // Reset to original y position
+        isJumping = false;
+        current = WarriorState.idle;
+        originalY = null;
+      }
+    }
+
     final speed = gameRef.isRunButtonPressed ? runSpeed : walkSpeed;
 
     if (_moveTarget == null &&
         current != WarriorState.attack1 &&
         current != WarriorState.attack2 &&
-        current != WarriorState.jump) {
+        !isJumping) {
       final delta = gameRef.joystick?.relativeDelta ?? Vector2.zero();
       if (delta != Vector2.zero()) {
         Vector2 dir = delta.normalized();
@@ -455,7 +448,7 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
         }
 
         if (isWalkable) {
-          _moveTarget = (nextTile + Vector2(0.5, 0.5)) * tileSize;
+          _moveTarget = (nextTile + Vector2(0.8, 0.8)) * tileSize;
           print('Moving to target: $_moveTarget');
         }
       }
@@ -472,7 +465,7 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       }
     }
 
-    if (current != WarriorState.attack1 && current != WarriorState.attack2 && current != WarriorState.jump) {
+    if (current != WarriorState.attack1 && current != WarriorState.attack2 && !isJumping) {
       if (_moveTarget != null) {
         current = gameRef.isRunButtonPressed ? WarriorState.run : WarriorState.walk;
       } else {
@@ -489,8 +482,4 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       _isFlipped = false;
     }
   }
-}
-
-void main() {
-  runApp(const GamePage());
 }
