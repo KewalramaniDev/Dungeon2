@@ -45,7 +45,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   RoundImageButtonComponent? jumpBtn;
   RoundImageButtonComponent? attackBtn;
   int spawnTileX = 3; // Manual spawn point X-coordinate
-  int spawnTileY = 6; // Manual spawn point Y-coordinate
+  int spawnTileY = 8; // Manual spawn point Y-coordinate
 
   @override
   Future<void> onLoad() async {
@@ -285,7 +285,7 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   Warrior({Vector2? position})
       : super(
     position: position ?? Vector2.zero(),
-    size: Vector2.all(90), // Increased for better visibility
+    size: Vector2(150,70), // Increased for better visibility
     anchor: Anchor.bottomCenter,
   );
 
