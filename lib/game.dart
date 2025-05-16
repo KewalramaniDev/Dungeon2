@@ -678,12 +678,12 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
     }
 
     animations = {
-      WarriorState.idle: idleAnimation!,
-      WarriorState.walk: runAnimation!,
-      WarriorState.run: runAnimation!,
-      WarriorState.jump: jumpAnimation!,
-      WarriorState.attack1: attack1Animation!,
-      WarriorState.attack2: attack2Animation!,
+      WarriorState.idle: idleAnimation,
+      WarriorState.walk: runAnimation,
+      WarriorState.run: runAnimation,
+      WarriorState.jump: jumpAnimation,
+      WarriorState.attack1: attack1Animation,
+      WarriorState.attack2: attack2Animation,
     };
     current = WarriorState.idle;
 
