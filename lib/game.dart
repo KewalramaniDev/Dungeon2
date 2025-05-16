@@ -57,7 +57,6 @@ class MyGame extends FlameGame
   late final World world;
   // Use nullable variables with proper initialization
   CameraComponent? _gameCamera;
-  WarriorHighlight? warriorHighlight;
 
   // Getter with null check to avoid LateInitializationError
   CameraComponent get gameCamera {
@@ -151,8 +150,7 @@ class MyGame extends FlameGame
 
       // Create warrior highlight with dynamic radius based on platform
       double focusRadius = _getDynamicFocusRadius();
-      warriorHighlight = WarriorHighlight(radius: focusRadius);
-      world.add(warriorHighlight!);
+
 
       // Set up camera to follow player
       if (_gameCamera != null) {
@@ -377,9 +375,6 @@ class MyGame extends FlameGame
     super.update(dt);
     if (player != null) {
       // Update warrior highlight position to match player
-      if (warriorHighlight != null) {
-        warriorHighlight!.position = player!.position;
-      }
 
       if (_gameCamera != null) {
         print(
@@ -529,33 +524,8 @@ class MyGame extends FlameGame
   }
 }
 
-// Camera focus highlight for the warrior
-class WarriorHighlight extends PositionComponent {
-  final double radius;
-  late final Paint paint;
 
-  WarriorHighlight({
-    required this.radius,
-    super.position,
-  }) : super(
-          anchor: Anchor.center,
-          size: Vector2.all(radius * 2),
-        ) {
-    paint = Paint()
-      ..color = Colors.yellow.withOpacity(0.3)
-      ..style = PaintingStyle.fill;
-  }
 
-  @override
-  void render(Canvas canvas) {
-    canvas.drawCircle(
-      Offset(size.x / 2, size.y / 2),
-      radius,
-      paint,
-    );
-    super.render(canvas);
-  }
-}
 
 class TileNode {
   final int x, y;
@@ -624,13 +594,13 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   bool isJumping = false;
   double? originalY;
   double jumpProgress = 0;
-  double jumpTotalTime = 0.6;
-  double jumpHeight = 50;
+  double jumpTotalTime = 0.8;
+  double jumpHeight = 30;
 
   Warrior({Vector2? position})
       : super(
           position: position ?? Vector2.zero(),
-          size: Vector2(150, 70),
+          size: Vector2(110, 50),
           anchor: Anchor.bottomCenter,
         );
 
