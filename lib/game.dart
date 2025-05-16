@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'dart:ui' as ui;
+import 'package:flame/camera.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
@@ -32,14 +33,19 @@ class GamePage extends StatelessWidget {
   }
 }
 
-class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDetection {
+class MyGame extends FlameGame with HasCollisionDetection {
+  // Create a World for our game components
+  late final World gameWorld;
+
+  // Create a CameraComponent to properly follow the warrior
+  late final CameraComponent cameraComponent;
+
   JoystickComponent? joystick;
   TiledComponent? mapComponent;
   TileLayer? baseLayer;
   TileLayer? wallLayer;
   Warrior? player;
   bool isRunButtonPressed = false;
-  final double desiredZoom = 2.0;
   final double tileSize = 32;
   RoundImageButtonComponent? runBtn;
   RoundImageButtonComponent? jumpBtn;
@@ -48,29 +54,60 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   int spawnTileY = 8;
   late Vector2 worldSize;
   late MiniMap miniMap;
+  double focusRadius = 10.0; // Default radius for focus effect
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
+    // Set focus radius based on platform
+    if (kIsWeb) {
+      focusRadius = 10.0; // Larger radius for web/desktop
+    } else {
+      focusRadius = 5.0; // Smaller radius for mobile devices
+    }
+
+    // Create the world first
+    gameWorld = World();
+
+    // Initialize the camera with appropriate viewfinder settings
+    final viewportResolution = Vector2(size.x, size.y);
+    cameraComponent = CameraComponent(
+      world: gameWorld,
+      viewport: FixedSizeViewport(viewportResolution.x, viewportResolution.y),
+    );
+
+    // Add camera to the game
+    add(cameraComponent);
+
+    // Add the world to the game
+    add(gameWorld);
+
+    // Configure camera zoom based on device
+    double zoomLevel =
+        kIsWeb ? 2.0 : 1.5; // Less zoom on mobile for better visibility
+    cameraComponent.viewfinder.zoom = zoomLevel;
+
     // Load the map
     try {
-      mapComponent = await TiledComponent.load('Map/1st base.tmx', Vector2.all(32));
+      mapComponent =
+          await TiledComponent.load('Map/1st base.tmx', Vector2.all(32));
       final mapWidth = mapComponent!.tileMap.map.width.toDouble();
       final mapHeight = mapComponent!.tileMap.map.height.toDouble();
       worldSize = Vector2(mapWidth * tileSize, mapHeight * tileSize);
 
-      add(RectangleComponent(
+      gameWorld.add(RectangleComponent(
         size: worldSize,
         paint: Paint()..color = const Color(0xFF808080),
       ));
-      add(mapComponent!);
+
+      gameWorld.add(mapComponent!); // Add to world, not directly to game
 
       baseLayer = mapComponent!.tileMap.getLayer<TileLayer>('Base');
       wallLayer = mapComponent!.tileMap.getLayer<TileLayer>('Wall');
       if (baseLayer == null || wallLayer == null) {
         print('Warning: Base or Wall layer not found');
-        camera.viewport.add(
+        cameraComponent.viewport.add(
           TextComponent(
             text: 'Base or Wall layer missing. Using fallback movement.',
             position: size / 2 + Vector2(0, 30),
@@ -81,12 +118,13 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
           ),
         );
       }
-      print('Map loaded: ${mapWidth}x${mapHeight} tiles, worldSize: $worldSize');
+      print(
+          'Map loaded: ${mapWidth}x${mapHeight} tiles, worldSize: $worldSize');
     } catch (e) {
       print('Error loading map: $e');
       mapComponent = null;
       worldSize = Vector2(10000, 10000);
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load map. Using fallback movement.',
           position: size / 2,
@@ -100,14 +138,21 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
 
     // Set spawn point
     try {
-      Vector2 spawnPosition = Vector2(spawnTileX.toDouble() + 0.5, spawnTileY.toDouble() + 0.5) * tileSize;
+      Vector2 spawnPosition =
+          Vector2(spawnTileX.toDouble() + 0.5, spawnTileY.toDouble() + 0.5) *
+              tileSize;
       player = Warrior(position: spawnPosition);
-      add(player!);
-      camera.follow(player!, maxSpeed: 400);
+
+      // Add player to the world, not directly to the game
+      gameWorld.add(player!);
+
+      // Configure camera to follow the player
+      cameraComponent.follow(player!);
+
       print('Player spawned at: $spawnPosition');
     } catch (e) {
       print('Error initializing player: $e');
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load player.',
           position: size / 2 + Vector2(0, 60),
@@ -124,7 +169,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     try {
       joystick = JoystickComponent(
         knob: CircleComponent(radius: 20, paint: Paint()..color = Colors.white),
-        background: CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
+        background:
+            CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
         anchor: Anchor.bottomLeft,
       );
 
@@ -155,10 +201,12 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         anchor: Anchor.bottomRight,
       );
 
-      camera.viewport.addAll([joystick!, runBtn!, jumpBtn!, attackBtn!]);
+      // Add UI elements to the viewport, not the world
+      cameraComponent.viewport
+          .addAll([joystick!, runBtn!, jumpBtn!, attackBtn!]);
     } catch (e) {
       print('Error initializing UI: $e');
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load UI.',
           position: size / 2 + Vector2(0, 90),
@@ -179,10 +227,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
       final miniMapHeight = worldSize.y * scale;
       miniMap = MiniMap(fullMapImage, Vector2(miniMapSize, miniMapHeight));
       miniMap.position = Vector2(10, 10);
-      camera.viewport.add(miniMap);
+      cameraComponent.viewport.add(miniMap);
     }
-
-    setCameraBounds();
   }
 
   Future<ui.Image> createFullMapImage() async {
@@ -223,7 +269,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
                   final destY = row * tileSize;
                   if (tileset.image != null && tileset.image!.source != null) {
                     final uiImage = await images.load(tileset.image!.source!);
-                    composition.add(uiImage, Vector2(destX, destY), source: srcRect);
+                    composition.add(uiImage, Vector2(destX, destY),
+                        source: srcRect);
                   }
                 }
               }
@@ -239,8 +286,6 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
-    camera.viewfinder.zoom = desiredZoom;
-    print('Visible world area: ${camera.viewport.size / desiredZoom} pixels');
 
     if (joystick != null) {
       joystick!.position = Vector2(40, size.y - joystick!.size.y / 2);
@@ -254,7 +299,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     const double buttonSpaceY = 12;
 
     if (attackBtn != null) {
-      attackBtn!.position = Vector2(size.x - buttonMarginX - buttonRadius, size.y - buttonMarginY - buttonRadius);
+      attackBtn!.position = Vector2(size.x - buttonMarginX - buttonRadius,
+          size.y - buttonMarginY - buttonRadius);
     }
     if (jumpBtn != null && attackBtn != null) {
       jumpBtn!.position = Vector2(
@@ -272,35 +318,29 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
       );
     }
 
-    setCameraBounds();
+    // Update camera properties when screen is resized
+    if (player != null && cameraComponent != null) {
+      _updateCameraBounds();
+    }
   }
 
-  void setCameraBounds() {
-    if (mapComponent == null) {
-      camera.setBounds(Rectangle.fromLTRB(0, 0, size.x, size.y));
-      print('No map loaded, using screen bounds');
-      return;
-    }
-    final vpSize = camera.viewport.size / camera.viewfinder.zoom;
+  void _updateCameraBounds() {
+    if (mapComponent == null) return;
+
+    final vpSize =
+        cameraComponent.viewport.size / cameraComponent.viewfinder.zoom;
     final minX = vpSize.x / 2;
     final minY = vpSize.y / 2;
     final maxX = worldSize.x - vpSize.x / 2;
     final maxY = worldSize.y - vpSize.y / 2;
-    camera.setBounds(Rectangle.fromLTRB(minX, minY, maxX, maxY));
-    print('Camera bounds set: minX=$minX, minY=$minY, maxX=$maxX, maxY=$maxY');
-  }
 
-  @override
-  void update(double dt) {
-    super.update(dt);
-    if (player != null) {
-      print('Player position: ${player!.position}, Camera position: ${camera.viewfinder.position}, Visible area: ${camera.viewfinder.visibleWorldRect}');
-    }
+    cameraComponent.setBounds(Rectangle.fromLTRB(minX, minY, maxX, maxY));
   }
 
   bool isWalkable(int x, int y) {
     if (baseLayer == null || wallLayer == null) return false;
-    if (x < 0 || x >= baseLayer!.width || y < 0 || y >= baseLayer!.height) return false;
+    if (x < 0 || x >= baseLayer!.width || y < 0 || y >= baseLayer!.height)
+      return false;
     final baseTile = baseLayer!.tileData?[y][x];
     final wallTile = wallLayer!.tileData?[y][x];
     return (baseTile?.tile ?? 0) != 0 && (wallTile?.tile ?? 0) == 0;
@@ -315,7 +355,10 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     final pathTiles = _aStar(startTileX, startTileY, endTileX, endTileY);
 
     if (pathTiles != null) {
-      return pathTiles.map((tile) => Vector2((tile.x + 0.5) * tileSize, (tile.y + 0.5) * tileSize)).toList();
+      return pathTiles
+          .map((tile) =>
+              Vector2((tile.x + 0.5) * tileSize, (tile.y + 0.5) * tileSize))
+          .toList();
     }
     return [];
   }
@@ -323,7 +366,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
   List<Vector2>? _aStar(int startX, int startY, int goalX, int goalY) {
     final openSet = <TileNode>[];
     final closedSet = <TileNode>[];
-    final startNode = TileNode(startX, startY, null, 0, heuristic(startX, startY, goalX, goalY) as double);
+    final startNode = TileNode(startX, startY, null, 0,
+        heuristic(startX, startY, goalX, goalY) as double);
     openSet.add(startNode);
 
     while (openSet.isNotEmpty) {
@@ -337,7 +381,9 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
           path.add(node);
           node = node.parent;
         }
-        return path.reversed.map((n) => Vector2(n.x.toDouble(), n.y.toDouble())).toList();
+        return path.reversed
+            .map((n) => Vector2(n.x.toDouble(), n.y.toDouble()))
+            .toList();
       }
 
       closedSet.add(current);
@@ -349,18 +395,22 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
           final nx = current.x + dx;
           final ny = current.y + dy;
 
-          if (nx < 0 || nx >= mapComponent!.tileMap.map.width || ny < 0 || ny >= mapComponent!.tileMap.map.height) continue;
+          if (nx < 0 ||
+              nx >= mapComponent!.tileMap.map.width ||
+              ny < 0 ||
+              ny >= mapComponent!.tileMap.map.height) continue;
           if (!isWalkable(nx, ny)) continue;
           if (closedSet.any((n) => n.x == nx && n.y == ny)) continue;
 
           final gNew = current.g + 1;
           var neighbor = openSet.firstWhere(
-                (n) => n.x == nx && n.y == ny,
+            (n) => n.x == nx && n.y == ny,
             orElse: () => TileNode(nx, ny, null, double.infinity, 0),
           );
 
           if (gNew < neighbor.g) {
-            neighbor = TileNode(nx, ny, current, gNew, heuristic(nx, ny, goalX, goalY) as double);
+            neighbor = TileNode(nx, ny, current, gNew,
+                heuristic(nx, ny, goalX, goalY) as double);
             if (!openSet.contains(neighbor)) {
               openSet.add(neighbor);
             }
@@ -391,7 +441,8 @@ class MiniMap extends PositionComponent with HasGameRef<MyGame>, TapCallbacks {
   List<Vector2> pathPoints = [];
   final Paint backgroundPaint = Paint()..color = Colors.black.withOpacity(0.5);
 
-  MiniMap(ui.Image fullMapImage, Vector2 miniMapSize) : super(size: miniMapSize) {
+  MiniMap(ui.Image fullMapImage, Vector2 miniMapSize)
+      : super(size: miniMapSize) {
     this.miniMapSize = miniMapSize;
     mapSprite = SpriteComponent.fromImage(fullMapImage, size: miniMapSize);
     add(mapSprite);
@@ -453,7 +504,8 @@ class MiniMap extends PositionComponent with HasGameRef<MyGame>, TapCallbacks {
     final worldPos = Vector2(localPos.x / mapScale, localPos.y / mapScale);
     final path = gameRef.findPath(gameRef.player!.position, worldPos);
     if (path.isNotEmpty) {
-      pathPoints = path.map((wp) => Vector2(wp.x * mapScale, wp.y * mapScale)).toList();
+      pathPoints =
+          path.map((wp) => Vector2(wp.x * mapScale, wp.y * mapScale)).toList();
     } else {
       pathPoints = [];
     }
@@ -470,10 +522,10 @@ class RoundImageButtonComponent extends CircleComponent with TapCallbacks {
     required ui.Image image,
     required Anchor anchor,
   }) : super(
-    radius: 24,
-    paint: Paint()..color = Colors.black54,
-    anchor: anchor,
-  ) {
+          radius: 24,
+          paint: Paint()..color = Colors.black54,
+          anchor: anchor,
+        ) {
     final imageSprite = SpriteComponent(
       sprite: Sprite(image),
       size: Vector2(40, 40),
@@ -521,17 +573,23 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
   double jumpProgress = 0;
   double jumpTotalTime = 0.6;
   double jumpHeight = 50;
+  late final WarriorHighlight highlight;
 
   Warrior({Vector2? position})
       : super(
-    position: position ?? Vector2.zero(),
-    size: Vector2(150, 70),
-    anchor: Anchor.bottomCenter,
-  );
+          position: position ?? Vector2.zero(),
+          size: Vector2(150, 70),
+          anchor: Anchor.bottomCenter,
+        );
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+
+    // Add a visual indicator based on the platform
+    final highlightRadius = gameRef.focusRadius;
+    highlight = WarriorHighlight(radius: highlightRadius);
+    add(highlight);
 
     SpriteAnimation? idleAnimation;
     SpriteAnimation? runAnimation;
@@ -552,16 +610,21 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       print('Attack-1 image size: ${atk1Img.width}x${atk1Img.height}');
       print('Attack-2 image size: ${atk2Img.width}x${atk2Img.height}');
 
-      idleAnimation = SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.1, to: 12);
-      runAnimation = SpriteSheet.fromColumnsAndRows(image: runImg, columns: 8, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.1, to: 8);
-      jumpAnimation = SpriteSheet.fromColumnsAndRows(image: jumpImg, columns: 2, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.15, to: 2);
-      attack1Animation = SpriteSheet.fromColumnsAndRows(image: atk1Img, columns: 7, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.08, to: 7);
-      attack2Animation = SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.08, to: 7);
+      idleAnimation =
+          SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.1, to: 12);
+      runAnimation =
+          SpriteSheet.fromColumnsAndRows(image: runImg, columns: 8, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.1, to: 8);
+      jumpAnimation =
+          SpriteSheet.fromColumnsAndRows(image: jumpImg, columns: 2, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.15, to: 2);
+      attack1Animation =
+          SpriteSheet.fromColumnsAndRows(image: atk1Img, columns: 7, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.08, to: 7);
+      attack2Animation =
+          SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.08, to: 7);
     } catch (e) {
       print('Error loading warrior assets: $e');
       return;
@@ -677,7 +740,8 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
             final baseTile = baseTileData[nextY][nextX];
             final wallTile = wallTileData[nextY][nextX];
             isWalkable = (baseTile.tile != 0) && (wallTile.tile == 0);
-            print('Tile ($nextX, $nextY) isWalkable: $isWalkable, Base gid: ${baseTile.tile}, Wall gid: ${wallTile.tile}');
+            print(
+                'Tile ($nextX, $nextY) isWalkable: $isWalkable, Base gid: ${baseTile.tile}, Wall gid: ${wallTile.tile}');
           } else {
             print('Tile ($nextX, $nextY) out of bounds');
           }
@@ -704,9 +768,12 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       }
     }
 
-    if (current != WarriorState.attack1 && current != WarriorState.attack2 && !isJumping) {
+    if (current != WarriorState.attack1 &&
+        current != WarriorState.attack2 &&
+        !isJumping) {
       if (_moveTarget != null) {
-        current = gameRef.isRunButtonPressed ? WarriorState.run : WarriorState.walk;
+        current =
+            gameRef.isRunButtonPressed ? WarriorState.run : WarriorState.walk;
       } else {
         current = WarriorState.idle;
       }
@@ -719,5 +786,32 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       flipHorizontally();
       _isFlipped = false;
     }
+  }
+}
+
+// Platform-specific visual highlight component for the warrior
+class WarriorHighlight extends CircleComponent {
+  WarriorHighlight({required double radius})
+      : super(
+          radius: radius,
+          paint: Paint()
+            ..color = Colors.white.withOpacity(0.2)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0,
+          anchor: Anchor.center,
+          position: Vector2(0,
+              -15), // Position slightly above the anchor point of the warrior
+        );
+
+  @override
+  void render(Canvas canvas) {
+    super.render(canvas);
+
+    // Add a subtle inner highlight
+    final innerPaint = Paint()
+      ..color = Colors.blue.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(Offset.zero, radius * 0.7, innerPaint);
   }
 }
