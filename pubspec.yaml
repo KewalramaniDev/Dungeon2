@@ -39,6 +39,7 @@ dependencies:
   flame_tiled: ^3.0.2
   # Ensure proper web support
   web_browser_detect: ^2.0.3
+  firebase_core: ^3.13.0
 
 dev_dependencies:
   flutter_test:

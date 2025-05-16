@@ -32,35 +32,70 @@ class GamePage extends StatelessWidget {
   }
 }
 
-class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDetection {
+class MyGame extends FlameGame with HasCollisionDetection, HasWorld {
+  // Create a CameraComponent to properly follow the warrior
+  late final CameraComponent cameraComponent;
+  late final World gameWorld;
+
   JoystickComponent? joystick;
   TiledComponent? mapComponent;
   TileLayer? baseLayer; // Store Base layer
   TileLayer? wallLayer; // Store Wall layer
   Warrior? player;
   bool isRunButtonPressed = false;
-  final double desiredZoom = 4.0; // Increased for better player focus
   final double tileSize = 32; // Tile size for grid calculations
   RoundImageButtonComponent? runBtn;
   RoundImageButtonComponent? jumpBtn;
   RoundImageButtonComponent? attackBtn;
   int spawnTileX = 3; // Manual spawn point X-coordinate
   int spawnTileY = 8; // Manual spawn point Y-coordinate
+  double focusRadius = 10.0; // Default radius for focus effect
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
+    // Set focus radius based on platform
+    if (kIsWeb) {
+      focusRadius = 10.0; // Larger radius for web/desktop
+    } else {
+      focusRadius = 5.0; // Smaller radius for mobile devices
+    }
+
+    // Create the world first
+    gameWorld = World();
+
+    // Initialize the camera with appropriate viewfinder settings
+    final viewportResolution = Vector2(size.x, size.y);
+    cameraComponent = CameraComponent(
+      world: gameWorld,
+      viewport: FixedSizeViewport(viewportResolution.x, viewportResolution.y),
+    );
+
+    // Add camera to the game
+    add(cameraComponent);
+
+    // Add the world to the game
+    add(gameWorld);
+
+    // Configure camera zoom based on device
+    double zoomLevel =
+        kIsWeb ? 4.0 : 3.0; // Less zoom on mobile for better visibility
+    cameraComponent.viewfinder.zoom = zoomLevel;
+
     // Load the map
     try {
-      mapComponent = await TiledComponent.load('Map/1st base.tmx', Vector2.all(32));
-      add(mapComponent!);
+      mapComponent =
+          await TiledComponent.load('Map/1st base.tmx', Vector2.all(32));
+      gameWorld
+          .add(mapComponent!); // Add map to the world, not directly to the game
+
       // Store Base and Wall layers
       baseLayer = mapComponent!.tileMap.getLayer<TileLayer>('Base');
       wallLayer = mapComponent!.tileMap.getLayer<TileLayer>('Wall');
       if (baseLayer == null || wallLayer == null) {
         print('Warning: Base or Wall layer not found');
-        camera.viewport.add(
+        cameraComponent.viewport.add(
           TextComponent(
             text: 'Base or Wall layer missing. Using fallback movement.',
             position: size / 2 + Vector2(0, 30),
@@ -74,7 +109,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     } catch (e) {
       print('Error loading map from assets: $e');
       mapComponent = null;
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load map. Using fallback movement.',
           position: size / 2,
@@ -88,13 +123,21 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
 
     // Set spawn point manually
     try {
-      Vector2 spawnPosition = Vector2(spawnTileX.toDouble() + 0.5, spawnTileY.toDouble() + 0.5) * tileSize;
+      Vector2 spawnPosition =
+          Vector2(spawnTileX.toDouble() + 0.5, spawnTileY.toDouble() + 0.5) *
+              tileSize;
       player = Warrior(position: spawnPosition);
-      add(player!);
-      camera.follow(player!, maxSpeed: 200);
+
+      // Add player to the world, not directly to the game
+      gameWorld.add(player!);
+
+      // Configure camera to follow the player and set bounds separately
+      cameraComponent.follow(player!);
+      final bounds = getWorldBounds();
+      cameraComponent.setBounds(bounds);
     } catch (e) {
       print('Error initializing player: $e');
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load player.',
           position: size / 2 + Vector2(0, 60),
@@ -111,7 +154,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     try {
       joystick = JoystickComponent(
         knob: CircleComponent(radius: 20, paint: Paint()..color = Colors.white),
-        background: CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
+        background:
+            CircleComponent(radius: 50, paint: Paint()..color = Colors.black38),
         anchor: Anchor.bottomLeft,
       );
 
@@ -126,6 +170,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         image: runImage,
         anchor: Anchor.bottomRight,
       );
+
       jumpBtn = RoundImageButtonComponent(
         onPressed: (pressed) {
           if (!pressed) player?.jump();
@@ -134,6 +179,7 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         image: jumpImage,
         anchor: Anchor.bottomRight,
       );
+
       attackBtn = RoundImageButtonComponent(
         onPressed: (pressed) {
           if (!pressed) player?.attack();
@@ -143,10 +189,12 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
         anchor: Anchor.bottomRight,
       );
 
-      camera.viewport.addAll([joystick!, runBtn!, jumpBtn!, attackBtn!]);
+      // Add UI elements to the viewport, not the world
+      cameraComponent.viewport
+          .addAll([joystick!, runBtn!, jumpBtn!, attackBtn!]);
     } catch (e) {
       print('Error initializing UI components: $e');
-      camera.viewport.add(
+      cameraComponent.viewport.add(
         TextComponent(
           text: 'Failed to load UI.',
           position: size / 2 + Vector2(0, 90),
@@ -158,16 +206,45 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
       );
       return;
     }
+  }
 
-    setCameraBounds();
+  // Get the world bounds based on the map size
+  Rectangle getWorldBounds() {
+    if (mapComponent == null) {
+      return Rectangle.fromLTRB(0, 0, size.x, size.y);
+    }
+    final mapWidth = mapComponent!.tileMap.map.width.toDouble();
+    final mapHeight = mapComponent!.tileMap.map.height.toDouble();
+    final worldSize = Vector2(mapWidth * tileSize, mapHeight * tileSize);
+
+    // Calculate the visible area in world coordinates
+    final vpSize =
+        cameraComponent.viewport.size / cameraComponent.viewfinder.zoom;
+
+    // Set camera boundaries to keep character centered
+    final minX = vpSize.x / 2;
+    final maxX = worldSize.x - vpSize.x / 2;
+    final minY = vpSize.y / 2;
+    final maxY = worldSize.y - vpSize.y / 2;
+
+    return Rectangle.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+
+    // Ensure camera is always following the player
+    if (player != null && cameraComponent != null) {
+      cameraComponent.follow(player!);
+    }
   }
 
   @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
-    camera.viewfinder.zoom = desiredZoom;
     if (joystick != null) {
-      joystick!.position = Vector2(40, size.y - joystick!.size.y / 2);
+      joystick!.position = Vector2(40, size.y - 40);
     }
 
     // Pyramid layout for buttons
@@ -179,7 +256,8 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
     const double buttonSpaceY = 12; // Space between run and lower buttons
 
     if (attackBtn != null) {
-      attackBtn!.position = Vector2(size.x - buttonMarginX - buttonRadius, size.y - buttonMarginY - buttonRadius);
+      attackBtn!.position = Vector2(size.x - buttonMarginX - buttonRadius,
+          size.y - buttonMarginY - buttonRadius);
     }
     if (jumpBtn != null && attackBtn != null) {
       jumpBtn!.position = Vector2(
@@ -197,31 +275,17 @@ class MyGame extends FlameGame with DragCallbacks, TapCallbacks, HasCollisionDet
       );
     }
 
-    setCameraBounds();
-  }
-
-  void setCameraBounds() {
-    if (mapComponent == null) {
-      camera.setBounds(Rectangle.fromLTRB(0, 0, size.x, size.y));
-      return;
+    // Update camera bounds when screen is resized
+    if (player != null && cameraComponent != null) {
+      cameraComponent.setBounds(getWorldBounds());
     }
-    final mapWidth = mapComponent!.tileMap.map.width.toDouble();
-    final mapHeight = mapComponent!.tileMap.map.height.toDouble();
-    final worldSize = Vector2(mapWidth * tileSize, mapHeight * tileSize);
-    final vpSize = camera.viewport.size / camera.viewfinder.zoom;
-
-    final minX = vpSize.x / 2;
-    final maxX = worldSize.x - vpSize.x / 2;
-    final minY = vpSize.y / 2;
-    final maxY = worldSize.y - vpSize.y / 2;
-
-    camera.setBounds(Rectangle.fromLTRB(minX, minY, maxX, maxY));
   }
 }
 
 class RoundImageButtonComponent extends CircleComponent with TapCallbacks {
   final void Function(bool) onPressed;
-  final bool isHold; // True for hold actions (run), false for tap actions (jump, attack)
+  final bool
+      isHold; // True for hold actions (run), false for tap actions (jump, attack)
 
   RoundImageButtonComponent({
     required this.onPressed,
@@ -229,10 +293,10 @@ class RoundImageButtonComponent extends CircleComponent with TapCallbacks {
     required ui.Image image,
     required Anchor anchor,
   }) : super(
-    radius: 24, // Fixed radius for small round buttons
-    paint: Paint()..color = Colors.black54, // Black with opacity 54/255
-    anchor: anchor,
-  ) {
+          radius: 24, // Fixed radius for small round buttons
+          paint: Paint()..color = Colors.black54, // Black with opacity 54/255
+          anchor: anchor,
+        ) {
     // Add image as child SpriteComponent
     final imageSprite = SpriteComponent(
       sprite: Sprite(image),
@@ -284,10 +348,10 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
 
   Warrior({Vector2? position})
       : super(
-    position: position ?? Vector2.zero(),
-    size: Vector2(150,70), // Increased for better visibility
-    anchor: Anchor.bottomCenter,
-  );
+          position: position ?? Vector2.zero(),
+          size: Vector2(150, 70), // Increased for better visibility
+          anchor: Anchor.bottomCenter,
+        );
 
   @override
   Future<void> onLoad() async {
@@ -313,16 +377,21 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       print('Attack-1 image size: ${atk1Img.width}x${atk1Img.height}');
       print('Attack-2 image size: ${atk2Img.width}x${atk2Img.height}');
 
-      idleAnimation = SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.1, to: 12);
-      runAnimation = SpriteSheet.fromColumnsAndRows(image: runImg, columns: 8, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.1, to: 8);
-      jumpAnimation = SpriteSheet.fromColumnsAndRows(image: jumpImg, columns: 2, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.15, to: 2);
-      attack1Animation = SpriteSheet.fromColumnsAndRows(image: atk1Img, columns: 7, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.08, to: 7);
-      attack2Animation = SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
-          .createAnimation(row: 0, stepTime: 0.08, to: 7);
+      idleAnimation =
+          SpriteSheet.fromColumnsAndRows(image: idleImg, columns: 12, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.1, to: 12);
+      runAnimation =
+          SpriteSheet.fromColumnsAndRows(image: runImg, columns: 8, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.1, to: 8);
+      jumpAnimation =
+          SpriteSheet.fromColumnsAndRows(image: jumpImg, columns: 2, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.15, to: 2);
+      attack1Animation =
+          SpriteSheet.fromColumnsAndRows(image: atk1Img, columns: 7, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.08, to: 7);
+      attack2Animation =
+          SpriteSheet.fromColumnsAndRows(image: atk2Img, columns: 7, rows: 1)
+              .createAnimation(row: 0, stepTime: 0.08, to: 7);
     } catch (e) {
       print('Error loading warrior assets: $e');
       return;
@@ -339,6 +408,10 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
     current = WarriorState.idle;
 
     add(RectangleHitbox());
+
+    // Add a visual indicator based on the platform
+    final highlightRadius = gameRef.focusRadius;
+    add(WarriorHighlight(radius: highlightRadius));
   }
 
   void jump() {
@@ -384,7 +457,8 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       if (jumpProgress < jumpTotalTime) {
         double u = pi * jumpProgress / jumpTotalTime;
         double fraction = sin(u);
-        position.y = originalY! - jumpHeight * (fraction * fraction); // Parabolic trajectory
+        position.y = originalY! -
+            jumpHeight * (fraction * fraction); // Parabolic trajectory
       } else {
         position.y = originalY!; // Reset to original y position
         isJumping = false;
@@ -403,8 +477,10 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       if (delta != Vector2.zero()) {
         Vector2 dir = delta.normalized();
         // Snap to primary direction (horizontal or vertical)
-        if (dir.x.abs() > dir.y.abs()) dir = Vector2(dir.x.sign, 0);
-        else dir = Vector2(0, dir.y.sign);
+        if (dir.x.abs() > dir.y.abs())
+          dir = Vector2(dir.x.sign, 0);
+        else
+          dir = Vector2(0, dir.y.sign);
 
         // Update facing direction
         if (dir.x == -1) {
@@ -438,7 +514,8 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
             final baseTile = baseTileData[nextY][nextX];
             final wallTile = wallTileData[nextY][nextX];
             isWalkable = (baseTile.tile != 0) && (wallTile.tile == 0);
-            print('Tile ($nextX, $nextY) isWalkable: $isWalkable, Base gid: ${baseTile.tile}, Wall gid: ${wallTile.tile}');
+            print(
+                'Tile ($nextX, $nextY) isWalkable: $isWalkable, Base gid: ${baseTile.tile}, Wall gid: ${wallTile.tile}');
           } else {
             print('Tile ($nextX, $nextY) out of bounds');
           }
@@ -465,9 +542,12 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       }
     }
 
-    if (current != WarriorState.attack1 && current != WarriorState.attack2 && !isJumping) {
+    if (current != WarriorState.attack1 &&
+        current != WarriorState.attack2 &&
+        !isJumping) {
       if (_moveTarget != null) {
-        current = gameRef.isRunButtonPressed ? WarriorState.run : WarriorState.walk;
+        current =
+            gameRef.isRunButtonPressed ? WarriorState.run : WarriorState.walk;
       } else {
         current = WarriorState.idle;
       }
@@ -481,5 +561,32 @@ class Warrior extends SpriteAnimationGroupComponent<WarriorState>
       flipHorizontally();
       _isFlipped = false;
     }
+  }
+}
+
+// Platform-specific visual highlight component for the warrior
+class WarriorHighlight extends CircleComponent {
+  WarriorHighlight({required double radius})
+      : super(
+          radius: radius,
+          paint: Paint()
+            ..color = Colors.white.withOpacity(0.2)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0,
+          anchor: Anchor.center,
+          position: Vector2(0,
+              -15), // Position slightly above the anchor point of the warrior
+        );
+
+  @override
+  void render(Canvas canvas) {
+    super.render(canvas);
+
+    // Add a subtle inner highlight
+    final innerPaint = Paint()
+      ..color = Colors.blue.withOpacity(0.15)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(Offset.zero, radius * 0.7, innerPaint);
   }
 }
