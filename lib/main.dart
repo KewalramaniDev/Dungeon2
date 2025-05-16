@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'game.dart';
 import 'background_painter.dart';
 import 'constants.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
   runApp(const DarknessDungeonApp());
 }
 
@@ -81,65 +87,80 @@ class _StartPageState extends State<StartPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: CustomPaint(
-        painter: DungeonBackgroundPainter(),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment.center,
-              radius: 1.0,
-              colors: [
-                Colors.indigo.shade800.withOpacity(0.6),
-                Colors.black.withOpacity(0.9),
-              ],
-              stops: const [0.4, 1.0],
-            ),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 20),
-                _buildAnimatedTitle('DARKNESS', 300),
-                _buildAnimatedTitle('DUNGEON', 600),
-                const SizedBox(height: 60),
-                _buildMenuButton(context, 'START GAME', () {
-                  // Navigate to game page
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const GamePage(),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 20),
-                _buildMenuButton(context, 'SETTINGS', () {
-                  // Open settings
-                }),
-                const SizedBox(height: 20),
-                _buildMenuButton(context, 'EXIT', () {
-                  // Exit game
-                }),
-                const SizedBox(height: 60),
-                AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _pulseAnimation.value,
-                      child: Text(
-                        'PRESS START TO ENTER THE DARKNESS',
-                        style: GoogleFonts.pressStart2p(
-                          fontSize: 10,
-                          color: DungeonColors.textPrimary,
-                        ),
-                      ),
-                    );
-                  },
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          return CustomPaint(
+            painter: DungeonBackgroundPainter(),
+            size: Size(constraints.maxWidth, constraints.maxHeight),
+            child: Container(
+              height: constraints.maxHeight,
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 1.0,
+                  colors: [
+                    Colors.indigo.shade800.withOpacity(0.6),
+                    Colors.black.withOpacity(0.9),
+                  ],
+                  stops: const [0.4, 1.0],
                 ),
-              ],
+              ),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 10),
+                        _buildAnimatedTitle('DARKNESS', 300),
+                        _buildAnimatedTitle('DUNGEON', 600),
+                        const SizedBox(height: 30),
+                        _buildMenuButton(context, 'START GAME', () {
+                          // Navigate to game page
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const GamePage(),
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 15),
+                        _buildMenuButton(context, 'SETTINGS', () {
+                          // Open settings
+                        }),
+                        const SizedBox(height: 15),
+                        _buildMenuButton(context, 'EXIT', () {
+                          // Exit game
+                        }),
+                        const SizedBox(height: 30),
+                        AnimatedBuilder(
+                          animation: _pulseAnimation,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _pulseAnimation.value,
+                              child: Text(
+                                'PRESS START TO ENTER THE DARKNESS',
+                                style: GoogleFonts.pressStart2p(
+                                  fontSize: 10,
+                                  color: DungeonColors.textPrimary,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -167,10 +188,10 @@ class _StartPageState extends State<StartPage>
   }
 
   Widget _buildMenuButton(
-      BuildContext context,
-      String text,
-      VoidCallback onPressed,
-      ) {
+    BuildContext context,
+    String text,
+    VoidCallback onPressed,
+  ) {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: TweenAnimationBuilder<double>(

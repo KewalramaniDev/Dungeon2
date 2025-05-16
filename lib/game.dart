@@ -237,7 +237,13 @@ class MyGame extends FlameGame
     // Create full map image for mini-map
     if (mapComponent != null) {
       final fullMapImage = await createFullMapImage();
-      const miniMapSize = 180.0; // Larger size for better visibility
+
+      // Use smaller size for mobile devices
+      final bool isMobile = !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS);
+
+      final double miniMapSize = isMobile ? 120.0 : 180.0;
 
       // Calculate mini-map dimensions to maintain aspect ratio
       final double mapAspectRatio = worldSize.y / worldSize.x;
@@ -248,15 +254,27 @@ class MyGame extends FlameGame
       miniMap = MiniMap(
         fullMapImage,
         Vector2(miniMapWidth, miniMapHeight),
-        playerDotRadius: 5.0,
+        playerDotRadius: isMobile ? 3.0 : 5.0,
         playerDotColor: Colors.red.shade700,
         showBorder: true,
         pulsePlayerDot: false,
         cornerRadius: 8.0,
-        borderPadding: 6.0,
+        borderPadding: isMobile ? 4.0 : 6.0,
       );
-      miniMap.position =
-          Vector2(20, 20); // Position in top-left with some padding
+
+      // Position in top-right for mobile, top-left for desktop
+      final topPadding = 20.0;
+      final sidePadding = 20.0;
+
+      if (isMobile) {
+        // For mobile: top right position
+        miniMap.position =
+            Vector2(size.x - miniMapWidth - sidePadding, topPadding);
+      } else {
+        // For desktop: top left position
+        miniMap.position = Vector2(sidePadding, topPadding);
+      }
+
       if (_gameCamera != null) {
         _gameCamera!.viewport.add(miniMap);
       }
@@ -284,6 +302,25 @@ class MyGame extends FlameGame
       _gameCamera!.viewfinder.zoom = desiredZoom;
       print(
           'Visible world area: ${_gameCamera!.viewport.size / desiredZoom} pixels');
+    }
+
+    // Reposition minimap on resize
+    if (mapComponent != null) {
+      final bool isMobile = !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS);
+
+      final topPadding = 20.0;
+      final sidePadding = 20.0;
+
+      if (isMobile) {
+        // For mobile: top right position
+        miniMap.position =
+            Vector2(size.x - miniMap.size.x - sidePadding, topPadding);
+      } else {
+        // For desktop: top left position
+        miniMap.position = Vector2(sidePadding, topPadding);
+      }
     }
 
     if (joystick != null) {
